@@ -1,4 +1,4 @@
-# skill-typing-infra-CloudFormation
+# skill-typing-infra-CloudFormation（作成中）
 ハッカソン2025冬 Aチームインフラ用リポジトリ
 
 ## 今回作成したAWS構成図について
