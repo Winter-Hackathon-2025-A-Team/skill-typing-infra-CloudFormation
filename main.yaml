@@ -19,7 +19,7 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: "CloudFormation-vpc-vpc"
+          Value: "CloudFormation-vpc"
 
   # パブリックサブネット1（ap-northeast-1a）
   PublicSubnet1:
