@@ -1,0 +1,561 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template for creating a VPC, subnets, NAT gateway, and related resources.
+
+# ACM 証明書の ARN（外部入力用）
+Parameters:
+  ACMCertificate:
+    Type: String
+    Default: "arn:aws:acm:ap-northeast-1:881490128743:certificate/d4cd488c-2252-489a-8011-87239ddb1ac7"
+    Description: "ARN of the ACM Certificate"
+
+Resources:
+  # VPC の作成（ネットワークの基本構成）
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      InstanceTenancy: "default"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-vpc"
+
+  # パブリックサブネット1（ap-northeast-1a）
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.0.0/20"
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-public1-ap-northeast-1a"
+
+  # パブリックサブネット2（ap-northeast-1c）
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.16.0/20"
+      AvailabilityZone: "ap-northeast-1c"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-public2-ap-northeast-1c"
+
+  # プライベートサブネット1（ap-northeast-1a, アプリケーション用）
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.128.0/20"
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-private1-ap-northeast-1a"
+
+  # プライベートサブネット2（ap-northeast-1c, アプリケーション用）
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.144.0/20"
+      AvailabilityZone: "ap-northeast-1c"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-private2-ap-northeast-1c"
+
+  # プライベートサブネット3（ap-northeast-1a, DB用）
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.160.0/20"
+      AvailabilityZone: "ap-northeast-1a"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-private3-ap-northeast-1a"
+
+  # プライベートサブネット4（ap-northeast-1c, DB用）
+  PrivateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.176.0/20"
+      AvailabilityZone: "ap-northeast-1c"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-subnet-private4-ap-northeast-1c"
+
+  # インターネットゲートウェイの作成（VPCからインターネットに接続）
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-igw"
+
+  # VPCにインターネットゲートウェイをアタッチ（外部通信を有効化）
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # パブリックサブネット用のルートテーブルを作成（インターネット通信経路を定義）
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-rtb-public"
+
+  # パブリックルートの設定（インターネットゲートウェイを経由するルートを追加）
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # パブリックサブネット1をパブリックルートテーブルに関連付け
+  PublicRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # パブリックサブネット2をパブリックルートテーブルに関連付け
+  PublicRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # NATゲートウェイ用のElastic IPを作成（固定IPを割り当て）
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: "vpc"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-eip-ap-northeast-1a"
+
+  # NATゲートウェイの作成（プライベートサブネットのインターネットアクセスを可能にする）
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet1  # NATゲートウェイはパブリックサブネット内に配置
+      AllocationId: !GetAtt NatEIP.AllocationId
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-nat-public1-ap-northeast-1a"
+
+  # プライベートサブネット用のルートテーブル1を作成（ap-northeast-1a）
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-rtb-private1-ap-northeast-1a"
+
+  # プライベートサブネット1のデフォルトルートをNATゲートウェイ経由で設定
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  # プライベートサブネット1をルートテーブル1に関連付け
+  PrivateRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  # プライベートサブネット用のルートテーブル2を作成（ap-northeast-1c）
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-rtb-private2-ap-northeast-1c"
+
+  # プライベートサブネット2のデフォルトルートをNATゲートウェイ経由で設定
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  # プライベートサブネット2をルートテーブル2に関連付け
+  PrivateRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # プライベートサブネット用のルートテーブル3を作成（ap-northeast-1a）
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-rtb-private3-ap-northeast-1a"
+
+  # プライベートサブネット3のデフォルトルートをNATゲートウェイ経由で設定
+  PrivateRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  # プライベートサブネット3をルートテーブル3に関連付け
+  PrivateRouteTableAssociation3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable3
+
+  # プライベートサブネット用のルートテーブル4を作成（ap-northeast-1c）
+  PrivateRouteTable4:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-vpc-rtb-private4-ap-northeast-1c"
+
+  # プライベートサブネット4のデフォルトルートをNATゲートウェイ経由で設定
+  PrivateRoute4:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable4
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  # プライベートサブネット4をルートテーブル4に関連付け
+  PrivateRouteTableAssociation4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet4
+      RouteTableId: !Ref PrivateRouteTable4
+
+  # ECSインスタンス用のセキュリティグループを作成（アプリケーション通信を許可）
+  ECSGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for ECS instances"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 1323
+          ToPort: 1323
+          SourceSecurityGroupId: !GetAtt PublicSG.GroupId # パブリックSGからの通信を許可
+      SecurityGroupEgress:
+        - IpProtocol: "-1"  # すべてのアウトバウンド通信を許可（NAT経由）
+          FromPort: 0
+          ToPort: 0
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-private-instance-sg"
+
+  # ECSクラスターの作成（Fargate タスクを管理）
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: "my-ecs-cluster"
+
+  # ECSタスク実行ロールの作成（ECSタスクがAWSサービスにアクセスするための権限）
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "ecs-task-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "ecs-task-execution-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecr:GetAuthorizationToken"   # ECR認証用
+                  - "ecr:GetDownloadUrlForLayer" # ECRからイメージを取得
+                  - "ecr:BatchGetImage"          # ECRからイメージ情報を取得
+                  - "logs:CreateLogStream"       # ログストリームを作成
+                  - "logs:PutLogEvents"          # ログを記録
+                  - "s3:GetObject"               # S3のオブジェクト取得
+                Resource: "*"
+
+  # ECSタスク定義の作成（Fargateを使用するタスクの設定）
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: "my-app-task"
+      NetworkMode: "awsvpc"  # VPCネットワークモードを使用
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: "my-app-repo"
+          Image: "881490128743.dkr.ecr.ap-northeast-1.amazonaws.com/my-app-repo"
+          PortMappings:
+            - ContainerPort: 1323
+              HostPort: 1323
+              Protocol: "tcp"
+
+  # ECSサービスの作成（プライベートサブネットで実行）
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: "my-ecs-service"
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1  # 常に1つのタスクを維持
+      LaunchType: "FARGATE"
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PrivateSubnet1  # プライベートサブネット1に配置
+            - !Ref PrivateSubnet2  # プライベートサブネット2に配置
+          SecurityGroups:
+            - !GetAtt ECSGroup.GroupId # ECS用セキュリティグループを適用
+          AssignPublicIp: "DISABLED"  # パブリックIPは割り当てず、NAT経由で通信
+      LoadBalancers:
+        - TargetGroupArn: !Ref MainTargetGroup
+          ContainerName: "my-app-repo"
+          ContainerPort: 1323
+    DependsOn:
+      - HttpsListener  # HTTPSリスナーが先に作成されることを保証
+
+  # パブリック向けのセキュリティグループを作成（ALB用）
+  PublicSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Public security group for ALB"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 443  # HTTPSアクセスを許可
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"  # すべてのIPアドレスからのアクセスを許可
+      SecurityGroupEgress:
+        - IpProtocol: "-1"  # すべてのアウトバウンド通信を許可
+          FromPort: 0
+          ToPort: 0
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-public-sg"
+
+  # インターネット向けアプリケーションロードバランサー(ALB)の作成
+  MainALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "cloudformation-main-alb"
+      Scheme: "internet-facing"  # 外部アクセス用のALB
+      Type: "application"  # アプリケーションロードバランサー
+      SecurityGroups:
+        - !GetAtt PublicSG.GroupId  # ALBにパブリックSGを適用
+      Subnets:
+        - !Ref PublicSubnet1  # パブリックサブネット1
+        - !Ref PublicSubnet2  # パブリックサブネット2
+      Tags:
+        - Key: Name
+          Value: "cloudformation-main-alb"
+
+  # ターゲットグループを作成（ECSタスクとALBの接続用）
+  MainTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: "cloudformation-main-target-group"
+      Port: 1323  # アプリケーションのリスニングポート
+      Protocol: "HTTP"
+      VpcId: !Ref VPC
+      HealthCheckIntervalSeconds: 30  # ヘルスチェック間隔（30秒）
+      HealthCheckPath: "/"  # ヘルスチェックのパス
+      HealthCheckProtocol: "HTTP"
+      HealthCheckTimeoutSeconds: 5  # ヘルスチェックのタイムアウト
+      HealthyThresholdCount: 3  # 正常と判定する閾値
+      UnhealthyThresholdCount: 3  # 異常と判定する閾値
+      TargetType: "ip"  # FargateのIPアドレスをターゲットに設定
+      Tags:
+        - Key: Name
+          Value: "cloudformation-main-target-group"
+
+  # ALBのHTTPSリスナーを作成（TLS証明書を適用）
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MainALB
+      Port: 443  # HTTPSポート
+      Protocol: "HTTPS"
+      Certificates:
+        - CertificateArn: !Ref ACMCertificate  # ACMで管理する証明書を使用
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref MainTargetGroup  # ターゲットグループへ転送
+
+  # RDS用のセキュリティグループを作成（DBアクセスの制御）
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for RDS"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: "10.0.0.0/16"  # VPC内のアクセスを許可
+      SecurityGroupEgress:
+        - IpProtocol: "-1"  # すべてのアウトバウンド通信を許可
+          FromPort: 0
+          ToPort: 0
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-rds-sg"
+
+  # RDS用のサブネットグループ（プライベートサブネット3,4に配置）
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS"
+      SubnetIds:
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-rds-subnet-group"
+
+  # Secrets Manager に RDS の管理ユーザー情報を保存（パスワードを明示的に指定）
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "rds-admin-secret"
+      Description: "RDS admin credentials stored in AWS Secrets Manager"
+      SecretString: !Sub |
+        {
+          "username": "admin",
+          "password": "mypassword123"
+        }
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-rds-secret"
+
+  # RDSインスタンスの作成（Secrets Manager からパスワードを取得）
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete  # 削除時にインスタンスを削除（本番環境では "Retain" を推奨）
+    Properties:
+      AllocatedStorage: "20"
+      StorageType: "gp2"
+      Engine: "mysql"
+      EngineVersion: "8.0.39"
+      DBInstanceClass: "db.t4g.micro"
+      MasterUsername: "admin"
+      MasterUserPassword: !Join
+        - ""
+        - - "{{resolve:secretsmanager:"
+          - !Ref RDSSecret
+          - ":SecretString:password}}"
+      DBParameterGroupName: "default.mysql8.0"
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      PubliclyAccessible: false
+      MultiAZ: false
+      Tags:
+        - Key: Name
+          Value: "CloudFormation-rds-instance"
+      DeletionProtection: false
+
+  # S3バケットの作成（CloudFrontのオリジンとして使用）
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: "my-cloudfront-bucket-tokyo" # S3バケット名
+      AccessControl: "Private" # バケットのアクセス制御をプライベートに設定
+      Tags:
+        - Key: "Name"
+          Value: "MyS3Bucket"
+        - Key: "Environment"
+          Value: "Production"
+      WebsiteConfiguration:
+        IndexDocument: "index.html" # デフォルトのインデックスドキュメント
+        ErrorDocument: "error.html" # エラーページの設定
+
+  # S3バケットポリシーの設定（CloudFront OAIからのアクセスを許可）
+  S3BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId # CloudFront OAIを許可
+            Action: "s3:GetObject"
+            Resource: !Sub "${S3Bucket.Arn}/*" # バケット内の全オブジェクトに適用
+
+  # CloudFrontのオリジンアクセスアイデンティティ（OAI）を作成
+  CloudFrontOAI:
+    Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: "OAI for S3 bucket"
+
+  # CloudFrontディストリビューションの作成（S3のコンテンツを配信）
+  CloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Enabled: true # CloudFrontディストリビューションを有効化
+        Comment: "CloudFront Distribution for S3 bucket in Tokyo region"
+        DefaultRootObject: "index.html"
+        Origins:
+          - Id: "S3-my-cloudfront-bucket"
+            DomainName: !GetAtt S3Bucket.RegionalDomainName # S3バケットのドメイン名
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOAI}" # OAIを使用
+        DefaultCacheBehavior:
+          TargetOriginId: "S3-my-cloudfront-bucket"
+          ViewerProtocolPolicy: "redirect-to-https" # HTTPリクエストをHTTPSにリダイレクト
+          AllowedMethods:
+            - "GET"
+            - "HEAD"
+          CachedMethods:
+            - "GET"
+            - "HEAD"
+          ForwardedValues:
+            QueryString: false # クエリ文字列を転送しない
+            Cookies:
+              Forward: "none" # クッキーを転送しない
+        PriceClass: "PriceClass_100" # 最も安価なリージョン制限
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: "none" # 地域制限なし
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true # デフォルトのCloudFront証明書を使用
+      Tags:
+        - Key: "Name"
+          Value: "MyCloudFrontDistribution"
+        - Key: "Environment"
+          Value: "Production"
