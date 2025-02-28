@@ -5,7 +5,7 @@ Description: CloudFormation template for creating a VPC, subnets, NAT gateway, a
 Parameters:
   ACMCertificate:
     Type: String
-    Default: "arn:aws:acm:ap-northeast-1:881490128743:certificate/d4cd488c-2252-489a-8011-87239ddb1ac7"
+    Default: "xxx"
     Description: "ARN of the ACM Certificate"
 
 Resources:
@@ -314,7 +314,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
       ContainerDefinitions:
         - Name: "my-app-repo"
-          Image: "881490128743.dkr.ecr.ap-northeast-1.amazonaws.com/my-app-repo"
+          Image: "xxx"
           PortMappings:
             - ContainerPort: 1323
               HostPort: 1323
